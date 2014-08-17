@@ -1,20 +1,81 @@
 ---
-title: "Prediction Assignment Writeup"
+title: "Prediction Human Activity Recognition"
 output: html_document
 ---
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+# 1. Loading Data
 
 ```{r}
-summary(cars)
+trainRaw<- read.csv("./data/pml-training.csv",sep="," , na.strings=c("NA","","#DIV/0!"))
+dim(trainRaw)
+str(trainRaw)
+
+testRaw<- read.csv("./data/pml-testing.csv",sep="," , na.strings=c("NA","","#DIV/0!"))
+dim(testRaw)
 ```
 
-You can also embed plots, for example:
-
-```{r, echo=FALSE}
-plot(cars)
+# 2. Cleaning Data
+There are so many NA values is shown.
+I'll count na value by each columm, then remove columns which contains NA value and no need to predict like name, timestamp etc.
+```{r}
+naCntByCol <- apply(trainRaw, 2, function(x) { sum(is.na(x)) })
+trainData <- trainRaw[,which(naCntByCol == 0)]
+trainData <- trainData[,8:60]
+dim(trainData)
+testData <- testRaw[,which(naCntByCol == 0)]
+testData <- testData[,8:60]
+dim(testData)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# 3. Fit a Model
+## 3.1 Partitioning Data
+```{r}
+library(caret)
+set.seed(123455)
+inTrain <- createDataPartition(y = trainData$classe,p=0.7,list=F)
+training <- trainData[inTrain,]
+testing <- trainData[-inTrain,]
+```
+
+## 3.2 Fit a model
+Build a Random Forest model
+```{r, cache=TRUE}
+modFit <- train(classe ~ . , data=training, method="rf", prox=TRUE, preProcess=c('knnImpute', 'center', 'scale')
+                        ,trControl = trainControl(method = "cv", number = 5, allowParallel = TRUE) )
+modFit
+```
+
+## 3.3 Calculate Accuracy on training data
+```{r, cache=TRUE}
+trainPred <- predict(modFit, training)
+confusionMatrix(data = trainPred, reference = training$classe)
+```
+
+## 3.4 Calculate out of sample error on the training-test data set
+```{r}
+testPred <- predict(modFit, testing)
+confusionMatrix(data = testPred, reference = testing$classe)
+```
+Accuracy is 0.0995 / 99.5%. It's not bad. :)
+
+
+# 4. Prediction on test data set ( pml-testing.csv )
+```{r}
+prediction <- predict(modFit, testData)
+prediction
+```
+
+#5. Creating 20 test cases file for "Prediction Assignment Submission"
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(prediction)
+```
